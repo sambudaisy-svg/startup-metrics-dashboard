@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Startup Metrics Dashboard - Daisy</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background: #f4f7fb; }
+    h1 { text-align: center; color: #2c3e50; margin-bottom: 20px; }
+    #kpiContainer { display: flex; flex-wrap: wrap; justify-content: space-around; margin: 20px 0; }
+    .kpiCard { background: white; padding: 15px; margin: 10px; border-radius: 8px; width: 180px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    .positive { color: green; font-weight: bold; }
+    .negative { color: red; font-weight: bold; }
+    .warning { color: darkorange; font-weight: bold; }
+    form { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    form input { padding: 5px; width: 120px; }
+    form button { padding: 6px 12px; cursor: pointer; }
+    #toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 20px; }
+    #toolbar button { padding: 8px 15px; cursor: pointer; background-color: #34495e; color: white; border: none; border-radius: 5px; transition: 0.2s; }
+    #toolbar button:hover { background-color: #2c3e50; }
+    table { width: 100%; border-collapse: collapse; background: white; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px; }
+    table th, table td { padding: 10px; text-align: center; border: 1px solid #ddd; }
+    table th { background: #34495e; color: white; }
+    .deleteBtn { background: red; color: white; padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; }
+    canvas { background: white; padding: 10px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body>
+  <h1>Startup Metrics Dashboard - Daisy</h1>
+
+  <!-- KPI Cards -->
+  <div id="kpiContainer"></div>
+
+  <!-- Data Entry Form -->
+  <form id="entryForm">
+    <input type="text" id="month" placeholder="Month e.g. Jan 2024" required>
+    <input type="number" id="mrr" placeholder="MRR (€)" required>
+    <input type="number" id="customers" placeholder="New Customers" required>
+    <input type="number" id="churn" placeholder="Churn" required>
+    <input type="number" id="expenses" placeholder="Expenses (€)" required>
+    <input type="number" id="cash" placeholder="Cash Balance (€)" required>
+    <button type="submit">Add Entry</button>
+  </form>
+
+  <!-- Toolbar for CSV and Chart Exports -->
+  <div id="toolbar">
+    <button id="downloadCSV">Download CSV</button>
+    <button onclick="exportChart(mrrChart, 'MRR_Chart')">Export MRR Chart</button>
+    <button onclick="exportChart(expensesCashChart, 'ExpensesCash_Chart')">Export Expenses/Cash Chart</button>
+    <button onclick="exportChart(customersChurnChart, 'CustomersChurn_Chart')">Export Customers/Churn Chart</button>
+  </div>
+
+  <!-- Data Table -->
+  <table>
+    <thead>
+      <tr>
+        <th>Month</th>
+        <th>MRR (€)</th>
+        <th>New Customers</th>
+        <th>Churn</th>
+        <th>Expenses (€)</th>
+        <th>Cash (€)</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="dataTable"></tbody>
+  </table>
+
+  <!-- Charts -->
+  <canvas id="mrrChart" height="150"></canvas>
+  <canvas id="expensesCashChart" height="150"></canvas>
+  <canvas id="customersChurnChart" height="150"></canvas>
+
+  <script>
+    let sampleData = [
+      { month: "Jan 2024", mrr: 15000, customers: 50, churn: 10, expenses: 12000, cash: 100000 },
+      { month: "Feb 2024", mrr: 18000, customers: 60, churn: 12, expenses: 14000, cash: 90000 },
+      { month: "Mar 2024", mrr: 21000, customers: 65, churn: 15, expenses: 15000, cash: 80000 },
+      { month: "Apr 2024", mrr: 23000, customers: 70, churn: 20, expenses: 16500, cash: 70000 },
+      { month: "May 2024", mrr: 22000, customers: 55, churn: 25, expenses: 18000, cash: 55000 },
+      { month: "Jun 2024", mrr: 24000, customers: 60, churn: 30, expenses: 19000, cash: 40000 },
+      { month: "Jul 2024", mrr: 23500, customers: 50, churn: 30, expenses: 20500, cash: 20000 },
+      { month: "Aug 2024", mrr: 22500, customers: 45, churn: 35, expenses: 21000, cash: 10000 }
+    ];
+
+    let data = JSON.parse(localStorage.getItem("startupMetrics")) || sampleData;
+
+    const form = document.getElementById("entryForm");
+    const tableBody = document.getElementById("dataTable");
+    const kpiContainer = document.getElementById("kpiContainer");
+
+    function renderTable() {
+      tableBody.innerHTML = "";
+      data.forEach((entry, index) => {
+        tableBody.innerHTML += `<tr>
+          <td>${entry.month}</td>
+          <td>€${entry.mrr.toLocaleString()}</td>
+          <td>${entry.customers}</td>
+          <td>${entry.churn}</td>
+          <td>€${entry.expenses.toLocaleString()}</td>
+          <td>€${entry.cash.toLocaleString()}</td>
+          <td><button class="deleteBtn" onclick="deleteEntry(${index})">Delete</button></td>
+        </tr>`;
+      });
+      calculateKPIs();
+      renderCharts();
+      localStorage.setItem("startupMetrics", JSON.stringify(data));
+    }
+
+    form.addEventListener("submit", e => {
+      e.preventDefault();
+      data.push({
+        month: document.getElementById("month").value,
+        mrr: parseFloat(document.getElementById("mrr").value),
+        customers: parseInt(document.getElementById("customers").value),
+        churn: parseInt(document.getElementById("churn").value),
+        expenses: parseFloat(document.getElementById("expenses").value),
+        cash: parseFloat(document.getElementById("cash").value)
+      });
+      form.reset();
+      renderTable();
+    });
+
+    function deleteEntry(index) {
+      data.splice(index, 1);
+      renderTable();
+    }
+
+    function calculateKPIs() {
+      const totalRevenue = data.reduce((sum, e) => sum + e.mrr, 0);
+      const avgBurn = data.reduce((sum, e) => sum + e.expenses, 0) / (data.length || 1);
+      const currentCash = data.length > 0 ? data[data.length-1].cash : 0;
+      const runway = avgBurn > 0 ? (currentCash / avgBurn).toFixed(1) : "∞";
+
+      let growthIndicator = "";
+      if (data.length >= 2) {
+        const latest = data[data.length-1].mrr;
+        const prev = data[data.length-2].mrr;
+        growthIndicator = latest > prev ? "<span class='positive'>▲ Growth</span>" : "<span class='negative'>▼ Decline</span>";
+      }
+
+      const customerGrowth = data.length > 0 ? data[data.length-1].customers - data[data.length-1].churn : "N/A";
+
+      let runwayClass = "positive";
+      if (runway < 3) runwayClass = "negative";
+      else if (runway < 6) runwayClass = "warning";
+
+      kpiContainer.innerHTML = `
+        <div class="kpiCard"><h3>Total Revenue</h3><p>€${totalRevenue.toLocaleString()}</p></div>
+        <div class="kpiCard"><h3>Average Burn Rate</h3><p>€${avgBurn.toFixed(2)}</p></div>
+        <div class="kpiCard"><h3>Runway</h3><p class="${runwayClass}">${runway} months</p></div>
+        <div class="kpiCard"><h3>Net Revenue Trend</h3><p>${growthIndicator}</p></div>
+        <div class="kpiCard"><h3>Customer Growth</h3><p>${customerGrowth}</p></div>
+      `;
+    }
+
+    let mrrChart, expensesCashChart, customersChurnChart;
+    function renderCharts() {
+      const months = data.map(d => d.month);
+      const mrrValues = data.map(d => d.mrr);
+      const expensesValues = data.map(d => d.expenses);
+      const cashValues = data.map(d => d.cash);
+      const customersValues = data.map(d => d.customers);
+      const churnValues = data.map(d => d.churn);
+
+      if(mrrChart) mrrChart.destroy();
+      if(expensesCashChart) expensesCashChart.destroy();
+      if(customersChurnChart) customersChurnChart.destroy();
+
+      const mrrCtx = document.getElementById('mrrChart').getContext('2d');
+      mrrChart = new Chart(mrrCtx, {
+        type: 'line',
+        data: { labels: months, datasets: [{ label: 'MRR (€)', data: mrrValues, borderColor: 'green', fill: false }] },
+        options: { responsive: true }
+      });
+
+      const expensesCtx = document.getElementById('expensesCashChart').getContext('2d');
+      expensesCashChart = new Chart(expensesCtx, {
+        type: 'bar',
+        data: { labels: months, datasets: [
+          { label: 'Expenses (€)', data: expensesValues, backgroundColor: 'orange' },
+          { label: 'Cash (€)', data: cashValues, backgroundColor: 'blue' }
+        ] },
+        options: { responsive: true }
+      });
+
+      const customersCtx = document.getElementById('customersChurnChart').getContext('2d');
+      customersChurnChart = new Chart(customersCtx, {
+        type: 'bar',
+        data: { labels: months, datasets: [
+          { label: 'Customers', data: customersValues, backgroundColor: 'green' },
+          { label: 'Churn', data: churnValues, backgroundColor: 'red' }
+        ] },
+        options: { responsive: true }
+      });
+    }
+
+    // CSV download
+    function downloadCSV() {
+      if(data.length === 0) return alert("No data to export.");
+      const headers = ["Month","MRR (€)","New Customers","Churn","Expenses (€)","Cash (€)"];
+      const rows = data.map(d => [d.month,d.mrr,d.customers,d.churn,d.expenses,d.cash]);
+      const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "startup_metrics.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // Export chart as PNG
+    function exportChart(chart, filename) {
+      const url = chart.toBase64Image();
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename + ".png";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    document.getElementById("downloadCSV").addEventListener("click", downloadCSV);
+
+    renderTable();
+  </script>
+</body>
+</html>
